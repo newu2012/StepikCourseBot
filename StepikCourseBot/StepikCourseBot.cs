@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 using OpenQA.Selenium;
@@ -23,8 +22,8 @@ namespace StepikCourseBot {
 
         #region User Credentials
 
-        private const string UserEmail = "";
-        private const string UserPassword = "";
+        private static string _userEmail;
+        private static string _userPassword;
 
         #endregion
 
@@ -54,7 +53,8 @@ namespace StepikCourseBot {
 
         private static void Main() {
             Console.WriteLine("Starting bot");
-
+            
+            EnterCredentials();
             SetUpWebDriver();
             StartBot();
             LogIn();
@@ -85,9 +85,9 @@ namespace StepikCourseBot {
 
         /*  TODO
          * 0. [READY] Login to account
-         * 1. [NOW] Check if can rerun test
-         * 2. Complete radioButton test
-         * 3. Go to next step / next unit
+         * 1. [READY] Check if can rerun test
+         * 2. [READY] Complete radioButton test
+         * 3. [READY] Go to next step / next unit
          * 4. ???
          */
 
@@ -96,6 +96,13 @@ namespace StepikCourseBot {
             _driver.FindElement(element).Click();
         }
 
+        private static void EnterCredentials() {
+            Console.WriteLine("Enter stepik email:");
+            _userEmail = Console.ReadLine();
+            Console.WriteLine("Enter stepik password:");
+            _userPassword = Console.ReadLine();
+        }
+        
         private static void LogIn() {
             _waitDriver.Until(driver => driver.FindElement(LoginEmailLocator));
 
@@ -103,8 +110,8 @@ namespace StepikCourseBot {
             var loginPassword = _driver.FindElement(LoginPasswordLocator);
             var loginButton = _driver.FindElement(LoginButtonLocator);
 
-            loginEmail.SendKeys(UserEmail);
-            loginPassword.SendKeys(UserPassword);
+            loginEmail.SendKeys(_userEmail);
+            loginPassword.SendKeys(_userPassword);
             loginButton.Click();
 
             WriteCourseProgress(GetCourseProgress());
@@ -123,7 +130,7 @@ namespace StepikCourseBot {
                 return new[] { courseProgressCurrent, courseProgressMaximum };
             }
             catch (Exception e) {
-                Console.WriteLine(e);
+                // Console.WriteLine(e);
                 _driver.Navigate().Refresh();
                 System.Threading.Thread.Sleep(5000);
                 return GetCourseProgress();
@@ -139,7 +146,7 @@ namespace StepikCourseBot {
                 _driver.FindElement(AttemptInnerLocator);
             }
             catch (Exception e) {
-                Console.WriteLine(e);
+                // Console.WriteLine(e);
                 return false;
             }
 
@@ -148,10 +155,12 @@ namespace StepikCourseBot {
 
         private static bool CheckIfCanRerunTest() {
             try {
-                WaitAndClick(AttemptsLimitLocator);
+                System.Threading.Thread.Sleep(500);
+                _driver.FindElement(AttemptsLimitLocator);
+                // WaitAndClick(AttemptsLimitLocator);
             }
             catch (Exception e) {
-                Console.WriteLine(e);
+                // Console.WriteLine(e);
                 return true;
             }
 
@@ -165,7 +174,7 @@ namespace StepikCourseBot {
                 return _driver.FindElements(TestTypeRadioLocator);
             }
             catch (Exception e) {
-                Console.WriteLine(e);
+                // Console.WriteLine(e);
                 return null;
             }
         }
@@ -199,7 +208,7 @@ namespace StepikCourseBot {
                     System.Threading.Thread.Sleep(500);
                 }
                 catch (Exception e) {
-                    Console.WriteLine(e);
+                    // Console.WriteLine(e);
                     _driver.Navigate().Refresh();
                     System.Threading.Thread.Sleep(5000);
                 }
@@ -208,19 +217,21 @@ namespace StepikCourseBot {
 
         private static bool WaitForAttemptMessage() {
             try {
-                _waitDriver.Until(driver => driver.FindElement(AttemptMessageCorrectLocator));
+                System.Threading.Thread.Sleep(1000);
+                _driver.FindElement(AttemptMessageCorrectLocator);
                 return true;
             }
             catch (Exception e) {
-                Console.WriteLine(e);
+                // Console.WriteLine(e);
             }
 
             try {
-                _waitDriver.Until(driver => driver.FindElement(AttemptMessageWrongLocator));
+                System.Threading.Thread.Sleep(1000);
+                _driver.FindElement(AttemptMessageWrongLocator);
                 return false;
             }
             catch (Exception e) {
-                Console.WriteLine(e);
+                // Console.WriteLine(e);
             }
 
             return false;
@@ -232,9 +243,6 @@ namespace StepikCourseBot {
             if (CheckIfCourseEnded()) {
                 GetCourseProgress();
                 Console.WriteLine("Goodbye!");
-            }
-            else {
-                //  TODO Close app
             }
         }
 
