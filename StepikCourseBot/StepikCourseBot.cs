@@ -1,12 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
-using NUnit.Framework;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 
 namespace StepikCourseBot {
-    static class StepikCourseBot {
+    internal static class StepikCourseBot {
         #region WebDriver and Url info
 
         private static ChromeDriver _driver;
@@ -16,6 +17,7 @@ namespace StepikCourseBot {
         private static string _stepUrl = "step/1?";
         private static string _loginUrl = "auth=login&";
         private static string _unitUrl = "unit=81144";
+        private const string CourseEndedString = "lesson-end";
 
         #endregion
 
@@ -36,8 +38,13 @@ namespace StepikCourseBot {
         private static readonly By CourseProgressLocator = By.ClassName("lesson-sidebar__course-progress");
 
         private static readonly By AttemptInnerLocator = By.ClassName("attempt__inner");
+        private static readonly By TestTypeLocator = By.ClassName("quiz-component");
+        private static readonly By TestTypeRadioLocator = By.ClassName("s-radio");
+        private static readonly By AttemptsLimitLocator = By.ClassName("cost-info__desc-toggler");
         private static readonly By AttemptMessageCorrectLocator = By.ClassName("attempt-message_correct");
         private static readonly By AttemptMessageWrongLocator = By.ClassName("attempt-message_wrong");
+        private static readonly By SubmitTestLocator = By.ClassName("submit-submission");
+        private static readonly By RetryTestLocator = By.ClassName("again-btn");
         private static readonly By NextStepLocator = By.ClassName("lesson__next-btn");
 
         #endregion
@@ -45,15 +52,18 @@ namespace StepikCourseBot {
         private static string Url(bool login) =>
             login ? BaseUrl + _stepUrl + _loginUrl + _unitUrl : BaseUrl + _stepUrl + _unitUrl;
 
-        private static void Main(string[] args) {
+        private static void Main() {
             Console.WriteLine("Starting bot");
 
             SetUpWebDriver();
             StartBot();
             LogIn();
 
-
-            //  TODO
+            var progresses = GetCourseProgress();
+            while (progresses[0] != progresses[1]) {
+                CompleteStep();
+                GoToNextStep();
+            }
 
             TearDownWebDriver();
         }
@@ -62,7 +72,7 @@ namespace StepikCourseBot {
             var options = new ChromeOptions();
             options.AddArgument("--start-maximized");
             _driver = new ChromeDriver(AppDomain.CurrentDomain.BaseDirectory);
-            _waitDriver = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
+            _waitDriver = new WebDriverWait(_driver, TimeSpan.FromSeconds(3));
         }
 
         private static void TearDownWebDriver() {
@@ -74,17 +84,19 @@ namespace StepikCourseBot {
         }
 
         /*  TODO
-         * 0. Login to account
-         * 1. Check if can rerun test
+         * 0. [READY] Login to account
+         * 1. [NOW] Check if can rerun test
          * 2. Complete radioButton test
          * 3. Go to next step / next unit
-         * 4.
-         *
-         *
-         * 
+         * 4. ???
          */
 
-        static void LogIn() {
+        private static void WaitAndClick(By element) {
+            _waitDriver.Until(driver => driver.FindElement(element));
+            _driver.FindElement(element).Click();
+        }
+
+        private static void LogIn() {
             _waitDriver.Until(driver => driver.FindElement(LoginEmailLocator));
 
             var loginEmail = _driver.FindElement(LoginEmailLocator);
@@ -95,23 +107,139 @@ namespace StepikCourseBot {
             loginPassword.SendKeys(UserPassword);
             loginButton.Click();
 
-            CheckCourseProgress();
+            WriteCourseProgress(GetCourseProgress());
         }
 
-        static void CheckCourseProgress() {
-            _waitDriver.Until(driver => driver.FindElement(CourseProgressLocator));
+        private static string[] GetCourseProgress() {
+            try {
+                _waitDriver.Until(driver => driver.FindElement(CourseProgressLocator));
 
-            var courseProgress = _driver.FindElement(CourseProgressLocator);
-            var courseProgressText = Regex.Replace(courseProgress.Text, @"[A-Za-zА-Яа-я\s\b:]+", "");
-            var courseProgresses = courseProgressText.Split('/');
-            var courseProgressCurrent = courseProgresses[0];
-            var courseProgressMaximum = courseProgresses[1];
+                var courseProgress = _driver.FindElement(CourseProgressLocator);
+                var courseProgressText = Regex.Replace(courseProgress.Text, @"[A-Za-zА-Яа-я\s\b:]+", "");
+                var courseProgresses = courseProgressText.Split('/');
+                var courseProgressCurrent = courseProgresses[0];
+                var courseProgressMaximum = courseProgresses[1];
 
-            Console.WriteLine($"Initial course progress: {courseProgressCurrent}");
-            Console.WriteLine($"Going to: {courseProgressMaximum}!");
+                return new[] { courseProgressCurrent, courseProgressMaximum };
+            }
+            catch (Exception e) {
+                Console.WriteLine(e);
+                _driver.Navigate().Refresh();
+                System.Threading.Thread.Sleep(5000);
+                return GetCourseProgress();
+            }
         }
 
-        static void CheckIfCanRerunTest() {
+        private static void WriteCourseProgress(string[] progress) {
+            Console.WriteLine($"Current course progress: {progress[0]}");
+        }
+
+        private static bool CheckIfStepHasTest() {
+            try {
+                _driver.FindElement(AttemptInnerLocator);
+            }
+            catch (Exception e) {
+                Console.WriteLine(e);
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool CheckIfCanRerunTest() {
+            try {
+                WaitAndClick(AttemptsLimitLocator);
+            }
+            catch (Exception e) {
+                Console.WriteLine(e);
+                return true;
+            }
+
+            return false;
+        }
+
+        //  TODO Rename
+        private static ReadOnlyCollection<IWebElement> CheckIfTestHasRadios() {
+            try {
+                _waitDriver.Until(driver => driver.FindElement(TestTypeLocator));
+                return _driver.FindElements(TestTypeRadioLocator);
+            }
+            catch (Exception e) {
+                Console.WriteLine(e);
+                return null;
+            }
+        }
+
+        private static void CompleteStep() {
+            if (!CheckIfStepHasTest()) return;
+            if (!CheckIfCanRerunTest()) return;
+            if (WaitForAttemptMessage()) return;
+
+            var radioButtons = CheckIfTestHasRadios();
+            if (radioButtons?.Count > 0) {
+                TrySolveStep();
+            }
+        }
+
+        //  TODO Update method to save recently used radios texts
+        private static void TrySolveStep() {
+            do {
+                try {
+                    _waitDriver.Until(driver => driver.FindElement(TestTypeLocator));
+                    var radioButtons =  _driver.FindElements(TestTypeRadioLocator);
+                    radioButtons[0].Click();
+
+                    WaitAndClick(SubmitTestLocator);
+                    if (WaitForAttemptMessage()) {
+                        WriteCourseProgress(GetCourseProgress());
+                        return;
+                    }
+
+                    WaitAndClick(RetryTestLocator);
+                    System.Threading.Thread.Sleep(500);
+                }
+                catch (Exception e) {
+                    Console.WriteLine(e);
+                    _driver.Navigate().Refresh();
+                    System.Threading.Thread.Sleep(5000);
+                }
+            } while (true);
+        }
+
+        private static bool WaitForAttemptMessage() {
+            try {
+                _waitDriver.Until(driver => driver.FindElement(AttemptMessageCorrectLocator));
+                return true;
+            }
+            catch (Exception e) {
+                Console.WriteLine(e);
+            }
+
+            try {
+                _waitDriver.Until(driver => driver.FindElement(AttemptMessageWrongLocator));
+                return false;
+            }
+            catch (Exception e) {
+                Console.WriteLine(e);
+            }
+
+            return false;
+        }
+
+        private static void GoToNextStep() {
+            WaitAndClick(NextStepLocator);
+
+            if (CheckIfCourseEnded()) {
+                GetCourseProgress();
+                Console.WriteLine("Goodbye!");
+            }
+            else {
+                //  TODO Close app
+            }
+        }
+
+        private static bool CheckIfCourseEnded() {
+            return _driver.Url.Contains(CourseEndedString);
         }
     }
 }
